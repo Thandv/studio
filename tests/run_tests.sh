@@ -14,6 +14,8 @@ python3 -m studio list   >/dev/null 2>&1; chk 0 $? "studio list"
 python3 -m studio doctor >/dev/null 2>&1; chk 0 $? "studio doctor"
 python3 -m studio config >/dev/null 2>&1; chk 0 $? "studio config"
 python3 -m studio totally-not-a-cap >/dev/null 2>&1; chk 2 $? "unknown capability -> exit 2"
+printf '/help\n/list\n/exit\n' | python3 -m studio shell >/dev/null 2>&1; chk 0 $? "shell /help /list /exit"
+printf '' | python3 -m studio shell >/dev/null 2>&1; chk 0 $? "shell EOF exits clean"
 
 python3 - <<'PY'
 import sys

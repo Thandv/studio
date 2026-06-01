@@ -1,5 +1,7 @@
 """studio — one launcher for the local AI studio.
 
+  studio                          interactive shell (default; /help inside)
+  studio shell                    interactive shell explicitly
   studio <capability> [args...]   run a capability (passes args straight through)
   studio doctor                   check system deps + capability readiness
   studio install [capability]     set up capabilities (venvs) + content
@@ -69,11 +71,26 @@ def _dispatch(cap: caps.Capability, rest: list[str], cfg: dict) -> int:
     return subprocess.run([*command, *rest], env=caps.shared_env(cfg)).returncode
 
 
+def run_capability(name: str, rest: list[str], cfg: dict | None = None) -> int:
+    """Resolve and run a capability by name. Reused by the CLI and the shell."""
+    cfg = cfg or cfg_mod.load()
+    cap = caps.get(name)
+    if cap is None:
+        print(f"unknown capability: {name}", file=sys.stderr)
+        return 2
+    if cap.kind == "content":
+        return _dispatch_content(rest)
+    return _dispatch(cap, rest, cfg)
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    if not argv or argv[0] in ("-h", "--help", "help"):
+    if argv and argv[0] in ("-h", "--help", "help"):
         _usage()
         return 0
+    if not argv or argv[0] == "shell":
+        from . import shell
+        return shell.run()
     cmd, rest = argv[0], argv[1:]
 
     if cmd in ("-V", "--version", "version"):

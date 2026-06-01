@@ -29,6 +29,20 @@ without merging them: each stays an independent repo with its own venv, and
 Args after the capability pass straight through, so `studio code chat`,
 `studio write start`, `studio audiobook render book.md` all work.
 
+### Interactive shell
+
+Run `studio` (no args) or `studio shell` for a single interactive home where the
+local agent is the default and the other capabilities are slash-commands:
+
+```
+studio> /persona security-auditor
+studio> /code                 # hands off to thandv chat, returns here on exit
+studio> /write start
+studio> /content sync
+studio> review this repo for me   # bare text -> one-shot prompt to the local agent
+studio> /exit
+```
+
 ## Quickstart
 
 ```bash
@@ -52,9 +66,20 @@ studio content sync   # refresh the agent/skill registry from upstreams
 - **One config.** `~/.studio/config.json` (model backend, home). `studio config`.
 - **Stdlib only.** The launcher has zero dependencies.
 
-## Docker (later)
+## Docker
 
-`Dockerfile` is an experimental Linux image that bundles the launcher and Python
-capabilities. On macOS the model runtime (Ollama/Metal) runs on the host, so the
-native `install.sh` path is the recommended local-first setup; Docker targets
-Linux/servers. See `docs/ARCHITECTURE.md`.
+`./docker-build.sh` builds a Linux image (`Dockerfile`) that clones the available
+capability repos (thandv, agent-forge, writer, SWE) and runs `studio install`
+in-image. Point it at a host/sidecar Ollama:
+
+```bash
+./docker-build.sh
+docker run --rm -it -e OLLAMA_HOST=http://host.docker.internal:11434 studio doctor
+docker run --rm -it -e OLLAMA_HOST=... studio code chat
+```
+
+Capability repo URLs are build args (`--local-ai`, `--audiobook`, or override the
+`*_URL` args) so forks/private mirrors work. On macOS the model runtime
+(Ollama/Metal) runs on the host, so the native `install.sh` path is the
+recommended local-first setup; Docker targets Linux/servers. See
+`docs/ARCHITECTURE.md`.
