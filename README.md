@@ -31,6 +31,30 @@ without merging them: each stays an independent repo with its own venv, and
 Args after the capability pass straight through, so `studio code chat`,
 `studio write start`, `studio audiobook render book.md` all work.
 
+### Self-improvement (`studio improve`)
+
+A safe, **human-gated** loop that researches, implements, and tests an improvement
+to the product itself, then opens a PR (it **never auto-merges**):
+
+```bash
+studio improve --dry-run                       # research + plan only (no edits)
+studio improve --target studio                 # improve the launcher itself
+studio improve --target agent-forge --backend cerebras   # use a bigger free model
+studio improve --goal "add a --json flag to studio list"
+```
+
+**How it stays safe:** all work happens in an isolated `git worktree` on a fresh
+branch (never your working tree); the agent's only command is the repo's test
+suite (no arbitrary shell); the diff must pass the agent-forge **security scanner**,
+the repo's **tests**, and an **adversarial review** before a PR is opened.
+
+**Compute backends** (`--backend`, all OpenAI-compatible): `ollama` (local,
+default) · `groq` / `cerebras` / `openrouter` (free hosted tiers — bigger models,
+need an API key) · `custom` (any base URL, e.g. a **Kaggle/Colab + Ollama + ngrok
+GPU tunnel** via `STUDIO_IMPROVE_BASE_URL`). `studio doctor` shows what's available.
+The driving roles are the agent-forge **`improvement`** domain agents
+(researcher → planner → implementer → tester → reviewer).
+
 ### Interactive shell
 
 Run `studio` (no args) or `studio shell` for a single interactive home where the

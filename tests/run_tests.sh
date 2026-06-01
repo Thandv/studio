@@ -33,6 +33,50 @@ print("registry + resolver + shared_env OK")
 PY
 chk 0 $? "registry/resolver/env unit checks"
 
+python3 - <<'PY'
+import sys, tempfile, subprocess
+sys.path.insert(0, ".")
+from pathlib import Path
+from studio.improve import backends, improve
+from studio.improve.runner import _safe, _extract_json
+
+# backends: ollama always resolves; hosted requires a key; availability map
+b = backends.resolve("ollama", None, "http://127.0.0.1:11434")
+assert b.base_url.endswith("/v1") and b.model
+try:
+    backends.resolve("groq", None, "x"); raise SystemExit("groq should need a key")
+except ValueError:
+    pass
+assert backends.available("x")["ollama"] is True
+
+# runner: path confinement + tolerant JSON action parsing
+try:
+    _safe(Path("/tmp"), "../etc/passwd"); raise SystemExit("traversal not blocked")
+except ValueError:
+    pass
+assert _extract_json('ok {"action":"finish","summary":"s"} end')["action"] == "finish"
+
+# improve helpers: test-cmd detection + target resolution
+assert improve.detect_test_cmd(Path(".")) == ["bash", "tests/run_tests.sh"]
+assert improve.resolve_target("studio").name == "studio"
+
+# worktree isolation on a throwaway repo (proves edits never touch the live tree)
+d = Path(tempfile.mkdtemp())
+for c in (["init", "-q", str(d)], ["-C", str(d), "config", "user.email", "t@t"],
+          ["-C", str(d), "config", "user.name", "t"]):
+    subprocess.run(["git", *c], check=True)
+(d / "f.txt").write_text("hi")
+subprocess.run(["git", "-C", str(d), "add", "-A"], check=True)
+subprocess.run(["git", "-C", str(d), "commit", "-qm", "init"], check=True)
+wt = improve.make_worktree(d, "improve/test")
+assert wt.exists() and (wt / "f.txt").exists()
+(wt / "g.txt").write_text("new")
+assert "g.txt" in improve.changed_files(wt)
+improve.remove_worktree(d, wt)
+print("improve internals OK")
+PY
+chk 0 $? "improve internals (backends/runner/worktree isolation)"
+
 echo
 if [ "$fails" -eq 0 ]; then echo "ALL TESTS PASSED"; else echo "$fails FAILED"; fi
 exit $((fails>0?1:0))

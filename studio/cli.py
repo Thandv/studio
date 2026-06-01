@@ -5,6 +5,7 @@
   studio <capability> [args...]   run a capability (passes args straight through)
   studio doctor                   check system deps + capability readiness
   studio install [capability]     set up capabilities (venvs) + content
+  studio improve [--target ..]    safe self-improvement loop (research->test->PR)
   studio list                     list capabilities and readiness
   studio config                   show config (~/.studio/config.json)
 
@@ -108,6 +109,23 @@ def main(argv: list[str] | None = None) -> int:
         print(f"# {cfg_mod.CONFIG_PATH}")
         print(__import__("json").dumps(cfg_mod.load(), indent=2))
         return 0
+    if cmd == "improve":
+        import argparse
+        from .improve import improve as improve_mod
+        ap = argparse.ArgumentParser(prog="studio improve",
+                                     description="Safe, human-gated self-improvement loop.")
+        ap.add_argument("--target", default="studio", help="capability name, repo path, or 'studio'")
+        ap.add_argument("--goal", default="", help="skip research; improve this specifically")
+        ap.add_argument("--backend", default="ollama",
+                        choices=["ollama", "groq", "cerebras", "openrouter", "custom"])
+        ap.add_argument("--model", default=None)
+        ap.add_argument("--max-iters", type=int, default=14)
+        ap.add_argument("--dry-run", action="store_true", help="research+plan only; no edits, no PR")
+        ap.add_argument("--merge", action="store_true", help="merge the PR if all gates pass (off by default)")
+        ap.add_argument("--keep", action="store_true", help="keep the worktree after the run")
+        a = ap.parse_args(rest)
+        return improve_mod.run(target=a.target, goal=a.goal, backend=a.backend, model=a.model,
+                               max_iters=a.max_iters, dry_run=a.dry_run, merge=a.merge, keep=a.keep)
 
     cap = caps.get(cmd)
     if cap is None:

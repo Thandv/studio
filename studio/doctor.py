@@ -49,6 +49,15 @@ def run() -> int:
             warn = f"  (needs: {', '.join(needs)})" if needs else ""
             print(f"  [ok] {c.name:<11} {c.summary}{warn}")
 
+    print("\nimprove backends (studio improve):")
+    from .improve import backends as be
+    avail = be.available(cfg["ollama_host"])
+    for name, ok in avail.items():
+        hint = "" if ok else f"  (set {be.SPECS[name]['key_env'] or 'STUDIO_IMPROVE_BASE_URL'})"
+        print(f"  [{'ok ' if ok else '-- '}] {name}{hint}")
+    print("  free online options: groq / cerebras / openrouter (free tiers), or")
+    print("  custom = a Kaggle/Colab + Ollama + ngrok GPU tunnel (STUDIO_IMPROVE_BASE_URL).")
+
     print()
     if missing_caps:
         print(f"{missing_caps} capability(ies) not ready — `studio install` to set them up.")
