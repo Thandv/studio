@@ -38,7 +38,7 @@ import sys, tempfile, subprocess
 sys.path.insert(0, ".")
 from pathlib import Path
 from studio.improve import backends, improve
-from studio.improve.runner import _safe, _extract_json
+from studio.improve.runner import _safe, _extract_json, _parse_action
 
 # backends: ollama always resolves; hosted requires a key; availability map
 b = backends.resolve("ollama", None, "http://127.0.0.1:11434")
@@ -55,6 +55,13 @@ try:
 except ValueError:
     pass
 assert _extract_json('ok {"action":"finish","summary":"s"} end')["action"] == "finish"
+
+# marker protocol: multi-line file body without JSON escaping (the small-model fix)
+w = _parse_action("ACTION: write_file\nPATH: a/b.py\nCONTENT:\nline1\nline2\n")
+assert w["action"] == "write_file" and w["path"] == "a/b.py" and w["content"] == "line1\nline2\n", w
+assert _parse_action("ACTION: run_tests")["action"] == "run_tests"
+assert _parse_action("ACTION: finish\nSUMMARY: did it")["summary"] == "did it"
+assert _parse_action('{"action":"read_file","path":"x"}')["action"] == "read_file"  # json fallback
 
 # improve helpers: test-cmd detection + target resolution
 assert improve.detect_test_cmd(Path(".")) == ["bash", "tests/run_tests.sh"]

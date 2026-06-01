@@ -18,17 +18,18 @@ from pathlib import Path
 from .backends import Backend
 
 PROTOCOL = """\
-You act by replying with EXACTLY ONE JSON object and nothing else. Shape:
-  {"thought": "...", "action": "<name>", ...args}
-Actions:
-  {"action":"list_dir","path":"."}
-  {"action":"read_file","path":"relative/path"}
-  {"action":"write_file","path":"relative/path","content":"<full new file content>"}
-  {"action":"run_tests"}
-  {"action":"finish","summary":"what you did / concluded"}
-Rules: paths are relative to the project root and must stay inside it. Make the
-smallest change that achieves the goal. Run tests after editing. When done (or if
-blocked), use finish. Only ONE action per reply.\
+Reply with EXACTLY ONE action and nothing else, using this line format:
+
+ACTION: list_dir | read_file | write_file | run_tests | finish
+PATH: <relative path>          # for list_dir / read_file / write_file
+SUMMARY: <one line>            # for finish only
+CONTENT:                       # for write_file ONLY — everything BELOW this line,
+<the complete new file content, verbatim, no fences, no escaping>
+
+Rules: ONE action per reply. For write_file put the ENTIRE new file content after
+a line that is exactly "CONTENT:" — do not wrap it in quotes or code fences and do
+not escape newlines. Paths stay inside the project. Make the smallest change that
+achieves the goal. Run tests after editing. Use finish when done or blocked.\
 """
 
 MAX_OBS = 6000
@@ -67,6 +68,40 @@ def _extract_json(text: str) -> dict | None:
                 except ValueError:
                     start = -1
     return None
+
+
+_ACTION_RE = re.compile(r"^\s*ACTION:\s*(\w+)", re.MULTILINE)
+_PATH_RE = re.compile(r"^\s*PATH:\s*(.+)$", re.MULTILINE)
+_SUMMARY_RE = re.compile(r"^\s*SUMMARY:\s*(.+)$", re.MULTILINE)
+_FENCE_RE = re.compile(r"```[^\n]*\n(.*?)```", re.DOTALL)
+
+
+def _parse_action(text: str) -> dict | None:
+    """Parse the marker protocol (small-model friendly); fall back to JSON.
+
+    The marker form avoids JSON-escaping multi-line file bodies, which small
+    local models get wrong — that was why edits never registered.
+    """
+    m = _ACTION_RE.search(text)
+    if not m:
+        return _extract_json(text)
+    action = m.group(1).strip().lower()
+    out: dict = {"action": action}
+    pm = _PATH_RE.search(text)
+    if pm:
+        out["path"] = pm.group(1).strip().strip('"').strip("`")
+    if action == "finish":
+        sm = _SUMMARY_RE.search(text)
+        out["summary"] = sm.group(1).strip() if sm else text[m.end():].strip()[:500]
+    if action == "write_file":
+        idx = text.find("CONTENT:")
+        if idx != -1:
+            body = text[idx + len("CONTENT:"):]
+            out["content"] = body[1:] if body[:1] == "\n" else body
+        else:  # tolerate a fenced block if the model used one
+            fm = _FENCE_RE.search(text)
+            out["content"] = fm.group(1) if fm else ""
+    return out
 
 
 class Runner:
@@ -129,10 +164,10 @@ class Runner:
             res.steps += 1
             reply = self.backend.chat(messages)
             res.transcript.append({"assistant": reply[:1000]})
-            act = _extract_json(reply)
-            if not act:
+            act = _parse_action(reply)
+            if not act or not act.get("action"):
                 messages.append({"role": "user",
-                                 "content": "Reply with ONE JSON action object only."})
+                                 "content": "Reply with ONE action in the ACTION:/PATH:/CONTENT: format."})
                 continue
             obs = self._do(act, res)
             res.transcript.append({"action": act.get("action"), "obs": obs[:500]})
