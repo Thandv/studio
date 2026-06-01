@@ -114,18 +114,24 @@ def main(argv: list[str] | None = None) -> int:
         from .improve import improve as improve_mod
         ap = argparse.ArgumentParser(prog="studio improve",
                                      description="Safe, human-gated self-improvement loop.")
+        cfg = cfg_mod.load()
         ap.add_argument("--target", default="studio", help="capability name, repo path, or 'studio'")
         ap.add_argument("--goal", default="", help="skip research; improve this specifically")
-        ap.add_argument("--backend", default="ollama",
+        ap.add_argument("--backend", default=None,
                         choices=["ollama", "groq", "cerebras", "openrouter", "custom"])
         ap.add_argument("--model", default=None)
+        ap.add_argument("--timeout", type=int, default=None, help="per model-call seconds")
         ap.add_argument("--max-iters", type=int, default=14)
         ap.add_argument("--dry-run", action="store_true", help="research+plan only; no edits, no PR")
         ap.add_argument("--merge", action="store_true", help="merge the PR if all gates pass (off by default)")
         ap.add_argument("--keep", action="store_true", help="keep the worktree after the run")
         a = ap.parse_args(rest)
-        return improve_mod.run(target=a.target, goal=a.goal, backend=a.backend, model=a.model,
-                               max_iters=a.max_iters, dry_run=a.dry_run, merge=a.merge, keep=a.keep)
+        return improve_mod.run(
+            target=a.target, goal=a.goal,
+            backend=a.backend or cfg.get("improve_backend", "ollama"),
+            model=a.model or (cfg.get("improve_model") or None),
+            timeout=a.timeout or int(cfg.get("improve_timeout", 300)),
+            max_iters=a.max_iters, dry_run=a.dry_run, merge=a.merge, keep=a.keep)
 
     cap = caps.get(cmd)
     if cap is None:

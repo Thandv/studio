@@ -99,8 +99,8 @@ def scan_diff(paths: list[str], wt: Path) -> tuple[bool, str]:
 
 
 def run(target: str = "studio", goal: str = "", backend: str = "ollama",
-        model: str | None = None, max_iters: int = 14, dry_run: bool = False,
-        merge: bool = False, keep: bool = False) -> int:
+        model: str | None = None, timeout: int = 300, max_iters: int = 14,
+        dry_run: bool = False, merge: bool = False, keep: bool = False) -> int:
     cfg = cfg_mod.load()
     root = resolve_target(target)
     if not (root / ".git").exists() and not (root.parent / ".git").exists():
@@ -112,7 +112,8 @@ def run(target: str = "studio", goal: str = "", backend: str = "ollama",
     print(f"studio improve\n  target:  {root}\n  backend: {backend}\n  tests:   {' '.join(test_cmd)}")
 
     try:
-        be = backends.resolve(backend, model, cfg.get("ollama_host", "http://127.0.0.1:11434"))
+        be = backends.resolve(backend, model, cfg.get("ollama_host", "http://127.0.0.1:11434"),
+                              timeout=timeout)
     except ValueError as e:
         print(f"  backend error: {e}")
         return 1

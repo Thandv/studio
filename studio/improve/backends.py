@@ -39,9 +39,11 @@ class Backend:
     base_url: str
     api_key: str
     model: str
+    timeout: int = 300
 
     def chat(self, messages: list[dict], temperature: float = 0.2,
-             max_tokens: int = 2048, timeout: int = 120) -> str:
+             max_tokens: int = 2048, timeout: int | None = None) -> str:
+        timeout = timeout or self.timeout
         body = json.dumps({
             "model": self.model, "messages": messages,
             "temperature": temperature, "max_tokens": max_tokens,
@@ -55,7 +57,7 @@ class Backend:
         return data["choices"][0]["message"]["content"]
 
 
-def resolve(name: str, model: str | None, ollama_host: str) -> Backend:
+def resolve(name: str, model: str | None, ollama_host: str, timeout: int = 300) -> Backend:
     if name not in SPECS:
         raise ValueError(f"unknown backend '{name}'. Known: {', '.join(SPECS)}")
     spec = SPECS[name]
@@ -76,7 +78,8 @@ def resolve(name: str, model: str | None, ollama_host: str) -> Backend:
     chosen = model or os.environ.get("STUDIO_IMPROVE_MODEL") or spec["model"]
     if not chosen:
         raise ValueError(f"no model set for backend '{name}' (pass --model or STUDIO_IMPROVE_MODEL)")
-    return Backend(name=name, base_url=base, api_key=key, model=chosen)
+    to = int(os.environ.get("STUDIO_IMPROVE_TIMEOUT", timeout))
+    return Backend(name=name, base_url=base, api_key=key, model=chosen, timeout=to)
 
 
 def available(ollama_host: str) -> dict[str, bool]:
