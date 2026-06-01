@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "studio-launcher"
+version = "0.1.0"
+description = "Unified launcher for a local-first, open-weights AI studio (thandv, agent-forge, local_ai, SWE, writer, audiobook)."
+requires-python = ">=3.10"
+dependencies = []   # stdlib only; capabilities live in their own venvs
+
+[project.scripts]
+studio = "studio.cli:main"
+
+[tool.setuptools]
+packages = ["studio"]
