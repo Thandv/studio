@@ -1,5 +1,7 @@
 # studio
 
+[![ci](https://github.com/Thandv/studio/actions/workflows/ci.yml/badge.svg)](https://github.com/Thandv/studio/actions/workflows/ci.yml)
+
 One launcher for a **local-first, open-weights AI studio**. It unifies your
 existing tools behind a single command, one shared model backend, and one home —
 without merging them: each stays an independent repo with its own venv, and
@@ -19,11 +21,11 @@ without merging them: each stays an independent repo with its own venv, and
 | Command | Tool | What it does |
 | --- | --- | --- |
 | `studio code` | [thandv](https://github.com/Thandv/thandv) | Local Claude-style chat/coding agent (personas + skills from agent-forge) |
-| `studio build-app "<idea>"` | local_ai | Autonomously build an app from an idea |
-| `studio vibe` | local_ai | Interactive vibe-coder |
-| `studio write …` | writer | Multi-agent writing / novel pipeline |
-| `studio audiobook …` | audiobook-converter | Manuscript → M4B audiobook |
-| `studio swe "<idea>"` | SWE | Markdown agent team that ships software (needs `ANTHROPIC_API_KEY`) |
+| `studio build-app "<idea>"` | [local_ai](https://github.com/Thandv/local_ai) | Autonomously build an app from an idea |
+| `studio vibe` | [local_ai](https://github.com/Thandv/local_ai) | Interactive vibe-coder |
+| `studio write …` | [writer](https://github.com/Thandv/writer-app) | Multi-agent writing / novel pipeline |
+| `studio audiobook …` | [audiobook-converter](https://github.com/Thandv/audiobook-converter) | Manuscript → M4B audiobook |
+| `studio swe "<idea>"` | [SWE](https://github.com/Thandv/swe-team) | Markdown agent team that ships software (needs `ANTHROPIC_API_KEY`) |
 | `studio content …` | [agent-forge](https://github.com/Thandv/agent-forge) | Manage the agent/skill registry (`sync`, `build`, `install`, …) |
 
 Args after the capability pass straight through, so `studio code chat`,

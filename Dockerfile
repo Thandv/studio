@@ -9,10 +9,8 @@
 #   docker run --rm -it -e OLLAMA_HOST=http://host.docker.internal:11434 studio doctor
 #   docker run --rm -it -e OLLAMA_HOST=... studio code chat
 #
-# Capability repo URLs are build args, so private mirrors / forks can be supplied.
-# local_ai and audiobook-converter have no public remote yet — pass their URLs to
-# include them (or mount them at /opt/Claude/repos/local_ai and
-# /opt/Claude/audiobook-converter and re-run `studio install`).
+# All six capability repos default to their public Thandv remotes; override any
+# *_URL build arg for forks / private mirrors.
 
 FROM python:3.12-slim
 
@@ -20,8 +18,8 @@ ARG THANDV_URL=https://github.com/Thandv/thandv
 ARG AGENTFORGE_URL=https://github.com/Thandv/agent-forge
 ARG WRITER_URL=https://github.com/Thandv/writer-app
 ARG SWE_URL=https://github.com/Thandv/swe-team
-ARG LOCAL_AI_URL=
-ARG AUDIOBOOK_URL=
+ARG LOCAL_AI_URL=https://github.com/Thandv/local_ai
+ARG AUDIOBOOK_URL=https://github.com/Thandv/audiobook-converter
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git build-essential ffmpeg espeak-ng ca-certificates \
