@@ -1,4 +1,7 @@
-"""`studio doctor` — check system deps and per-capability readiness."""
+"""`studio doctor` — check system deps and per-capability readiness.
+
+Exits 1 when any capability is not ready; missing system deps are warnings only.
+"""
 from __future__ import annotations
 
 import os
@@ -60,6 +63,6 @@ def run() -> int:
     print()
     if missing_caps:
         print(f"{missing_caps} capability(ies) not ready — `studio install` to set them up.")
-    else:
-        print("all capabilities ready.")
+        return 1
+    print("all capabilities ready.")
     return 0

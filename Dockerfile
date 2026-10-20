@@ -47,4 +47,6 @@ RUN studio install || true
 
 ENV OLLAMA_HOST=http://host.docker.internal:11434
 ENTRYPOINT ["studio"]
+# `studio doctor` exits 1 while any capability is not ready (e.g. a repo not
+# cloned or a venv that failed to build), so this default run can exit non-zero.
 CMD ["doctor"]

@@ -8,6 +8,7 @@ tools — it only locates and runs them.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -18,6 +19,46 @@ from . import config
 STUDIO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BASE = STUDIO_ROOT.parent
 READY = "ready"
+
+
+# pip's long-path launcher: "#!/bin/sh" then a line '''exec' "<python>" "$0" "$@".
+_TRAMPOLINE = re.compile(r"""^'''exec' (?:"([^"]+)"|(\S+))""", re.MULTILINE)
+
+
+def _broken(interpreter: str) -> str:
+    return f"broken venv: interpreter {interpreter} missing, rebuild the venv"
+
+
+def script_problem(script: Path) -> str | None:
+    """Why `script` cannot start, judged from its first 256 bytes, or None if it can.
+
+    Handles '#!/abs/interp [args]', '#!/usr/bin/env [-S] X' (X looked up on
+    PATH) and pip's '#!/bin/sh' trampoline. No shebang means a binary or a
+    script the OS runs itself: fine.
+    """
+    try:
+        with open(script, "rb") as f:
+            head = f.read(256).decode("utf-8", "replace")
+    except OSError as e:
+        return f"cannot read {script}: {e.strerror or e}"
+    if not head.startswith("#!"):
+        return None
+    words = head[2:].split("\n", 1)[0].split()
+    if not words:
+        return f"empty shebang in {script}"
+    interp, args = words[0], words[1:]
+    if not Path(interp).is_file():
+        return _broken(interp)
+    if Path(interp).name == "env":
+        prog = next((a for a in args if not a.startswith("-")), None)
+        if prog is not None and "=" not in prog and shutil.which(prog) is None:
+            return _broken(f"{prog} (via {interp})")
+    tramp = _TRAMPOLINE.search(head)
+    if tramp:
+        target = tramp.group(1) or tramp.group(2)
+        if not Path(target).is_file():
+            return _broken(target)
+    return None
 
 
 class ConfigError(ValueError):
@@ -80,11 +121,12 @@ class Capability:
         if self.kind == "driver":
             py = self.venv_python()
             drv = repo / self.driver
-            if drv.exists():
-                return [str(py if py.exists() else "python3"), str(drv)]
+            if drv.exists() and py.exists():
+                return [str(py), str(drv)]
             return None
         if self.kind == "content":
-            return ["python3"]  # studio runs agent-forge scripts directly
+            py3 = shutil.which("python3")  # studio runs agent-forge scripts directly
+            return [py3] if py3 else None
         # passthrough: prefer the repo's own venv script, then PATH.
         cand = repo / ".venv" / "bin" / self.script
         if cand.exists():
@@ -94,15 +136,21 @@ class Capability:
 
     def status(self) -> str:
         """The single readiness verdict: 'ready', 'repo not found: <path>',
-        'not installed', or 'bad config: <why>'."""
+        'broken venv: ...', 'not installed', or 'bad config: <why>'."""
         try:
             repo = self.repo_path()
         except ConfigError as e:
             return f"bad config: {e}"
         if not repo.exists():
             return f"repo not found: {repo}"
-        if self.resolve_command() is None:
+        py = self.venv_python()
+        if self.kind == "driver" and py.is_symlink() and not py.exists():
+            return _broken(os.readlink(py))
+        command = self.resolve_command()
+        if command is None:
             return "not installed"
+        if self.kind == "passthrough":
+            return script_problem(Path(command[0])) or READY
         return READY
 
     def ready(self) -> bool:

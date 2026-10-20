@@ -33,7 +33,6 @@ chk 0 $? "sandbox PATH has no real sibling tools"
 
 python3 -m studio --help >/dev/null 2>&1; chk 0 $? "studio --help"
 python3 -m studio list   >/dev/null 2>&1; chk 0 $? "studio list"
-python3 -m studio doctor >/dev/null 2>&1; chk 0 $? "studio doctor"
 python3 -m studio config >/dev/null 2>&1; chk 0 $? "studio config"
 python3 -m studio totally-not-a-cap >/dev/null 2>&1; chk 2 $? "unknown capability -> exit 2"
 printf '/help\n/list\n/exit\n' | python3 -m studio shell >/dev/null 2>&1; chk 0 $? "shell /help /list /exit"
@@ -187,6 +186,72 @@ sb STUDIO_HOME="$CH" STUDIO_BASE="$SB/one" "$PY" -m studio config 2>&1 | grep -q
 chk 0 $? "relative override inside the base is joined to it"
 
 ! grep -qE '^\s*(from|import) .*capabilities' studio/config.py; chk 0 $? "config.py does not import capabilities"
+
+# --- STU-2: honest readiness; doctor exit code; contained launch errors ---
+# Doctor runs with a PATH holding only python3, so ollama/ffmpeg/espeak-ng are absent.
+mkdir -p "$SB/pybin"; ln -s "$PY" "$SB/pybin/python3"
+B="$SB/healthy"; full_base "$B"
+out="$(sb STUDIO_BASE="$B" PATH="$SB/pybin" "$PY" -m studio doctor 2>&1)"; rc=$?
+[ "$rc" -eq 0 ] && printf '%s\n' "$out" | grep -q 'all capabilities ready' \
+  && printf '%s\n' "$out" | grep -q 'MISSING.*ollama' && printf '%s\n' "$out" | grep -q 'MISSING.*ffmpeg' \
+  && printf '%s\n' "$out" | grep -q 'MISSING.*espeak-ng'
+chk 0 $? "doctor on an all-healthy fake base exits 0 with ollama/ffmpeg/espeak-ng absent"
+sb STUDIO_BASE="$B" PATH="$SB/pybin" "$PY" -m studio write one "two words" >/dev/null 2>&1 \
+  && [ "$(cat "$B/writer/.venv/bin/writer.argv")" = "$(printf 'one\ntwo words')" ]
+chk 0 $? "dispatch runs the venv stub with the args passed through"
+
+B="$SB/broken"; full_base "$B"; fake_script "$B/writer/.venv/bin/writer" "#!$SB/gone/python"
+out="$(sb STUDIO_BASE="$B" PATH="$SB/pybin" "$PY" -m studio doctor 2>&1)"; rc=$?
+[ "$rc" -eq 1 ] && printf '%s\n' "$out" | grep -q "broken venv: interpreter $SB/gone/python missing, rebuild the venv"
+chk 0 $? "shebang to a missing interpreter: 'broken venv' and doctor exits non-zero"
+err="$(sb STUDIO_BASE="$B" "$PY" -m studio write hi 2>&1 >/dev/null)"; rc=$?
+[ "$rc" -eq 1 ] && [ "$(printf '%s\n' "$err" | grep -c 'cannot launch write: .*Run: studio install write')" -eq 1 ] \
+  && ! printf '%s' "$err" | grep -q Traceback
+chk 0 $? "dispatching a broken venv: one 'cannot launch' line, exit 1, no traceback"
+
+B="$SB/mixed"; fake_base "$B"; mkdir -p "$B/local_ai"
+fake_script "$B/writer/.venv/bin/writer" "#!$SB/gone/python"
+out="$(sb STUDIO_BASE="$B" PATH="$SB/pybin" "$PY" -m studio doctor 2>&1)"; rc=$?
+[ "$rc" -eq 1 ] && printf '%s\n' "$out" | grep -q "repo not found: $B/thandv" \
+  && printf '%s\n' "$out" | grep -q '> broken venv: interpreter' \
+  && printf '%s\n' "$out" | grep -q '> not installed (run: studio install vibe)'
+chk 0 $? "doctor reports 'repo not found', 'broken venv' and 'not installed' distinctly"
+
+B="$SB/swe"; mkdir -p "$B/SWE/binary/driver"; : > "$B/SWE/binary/driver/orchestrator_driver.py"
+sb STUDIO_BASE="$B" "$PY" -m studio list 2>&1 | grep -q '^  swe  *not installed$'
+chk 0 $? "swe with no .venv/bin/python is not ready though python3 is on PATH"
+mkdir -p "$B/SWE/.venv/bin"; ln -s "$SB/gone/python3.12" "$B/SWE/.venv/bin/python"
+sb STUDIO_BASE="$B" "$PY" -m studio list 2>&1 | grep -q "^  swe  *broken venv: interpreter $SB/gone/python3.12 missing"
+chk 0 $? "swe whose .venv/bin/python dangles is 'broken venv'"
+
+# shebang forms: env, env with a missing program, pip's /bin/sh trampoline, args, none.
+B="$SB/forms"; W="$B/writer/.venv/bin/writer"
+st(){ sb STUDIO_BASE="$B" PATH="$SB/pybin:/usr/bin:/bin" "$PY" -m studio list 2>&1 | sed -n 's/^  write  *//p'; }
+# tramp <python>: pip's long-path launcher pointing at <python>.
+tramp(){ fake_script "$W" "$(printf '#!/bin/sh\n%sexec%s "%s" "$0" "$@"\n%s' "'''" "'" "$1" "' '''")"; }
+fake_script "$W" '#!/usr/bin/env python3';           [ "$(st)" = ready ]; chk 0 $? "shebang '#!/usr/bin/env python3' (on PATH) is ready"
+fake_script "$W" '#!/usr/bin/env -S no-such-interp -u'
+[ "$(st)" = "broken venv: interpreter no-such-interp (via /usr/bin/env) missing, rebuild the venv" ]
+chk 0 $? "shebang '#!/usr/bin/env -S X' with X not on PATH is 'broken venv'"
+tramp "$SB/gone/py thon"
+[ "$(st)" = "broken venv: interpreter $SB/gone/py thon missing, rebuild the venv" ]; chk 0 $? "pip /bin/sh trampoline to a missing python is 'broken venv'"
+tramp "$PY";                                          [ "$(st)" = ready ]; chk 0 $? "pip /bin/sh trampoline to an existing python is ready"
+fake_script "$W" '#!/bin/sh -e';                      [ "$(st)" = ready ]; chk 0 $? "shebang with arguments is ready"
+printf '\177ELF\0\0' > "$W"; chmod +x "$W";           [ "$(st)" = ready ]; chk 0 $? "no shebang (binary) is ready"
+rm -rf "$B/writer/.venv"; mkdir -p "$SB/pathbin"; fake_script "$SB/pathbin/writer" "#!$SB/gone/python"
+sb STUDIO_BASE="$B" PATH="$SB/pathbin:/usr/bin:/bin" "$PY" -m studio list 2>&1 | grep -q "^  write  *broken venv: interpreter $SB/gone/python"
+chk 0 $? "a PATH-fallback script gets the same shebang check"
+sb "$PY" -c 'import sys; from pathlib import Path; from studio.capabilities import script_problem as p; sys.exit(0 if p(Path(sys.argv[1])).startswith("cannot read") else 1)' "$SB"
+chk 0 $? "an unreadable script is not ready, with the error shown"
+
+# content: python3 is resolved, not assumed; its launch errors are contained too.
+B="$SB/content"; mkdir -p "$B/agent-forge/scripts" "$SB/nopy"
+sb STUDIO_BASE="$B" PATH="$SB/nopy" "$PY" -m studio list 2>&1 | grep -q '^  content  *not installed$'
+chk 0 $? "content without python3 on PATH is not ready"
+mkdir -p "$SB/badpy"; fake_script "$SB/badpy/python3" "#!$SB/gone/python"
+err="$(sb STUDIO_BASE="$B" PATH="$SB/badpy" "$PY" -m studio content sync 2>&1 >/dev/null)"; rc=$?
+[ "$rc" -eq 1 ] && [ "$(printf '%s\n' "$err" | grep -c '^cannot launch content: ')" -eq 1 ] && ! printf '%s' "$err" | grep -q Traceback
+chk 0 $? "content launch failure: one 'cannot launch' line, exit 1, no traceback"
 
 echo
 if [ "$fails" -eq 0 ]; then echo "ALL TESTS PASSED"; else echo "$fails FAILED"; fi

@@ -67,8 +67,19 @@ def _show_config() -> None:
         print(f"#   {c.name:<11} {_repo_label(c)}")
 
 
+def _launch(name: str, command: list[str], *, cwd: str | None = None,
+            env: dict[str, str] | None = None) -> int:
+    """Run a capability's command; a launch failure is one line, not a traceback."""
+    try:
+        return subprocess.run(command, cwd=cwd, env=env).returncode
+    except OSError as e:
+        print(f"cannot launch {name}: {e}. Run: studio install {name}", file=sys.stderr)
+        return 1
+
+
 def _dispatch_content(rest: list[str]) -> int:
-    af = caps.get("content").repo_path()
+    content = caps.BY_NAME["content"]
+    af = content.repo_path()
     if not af.exists():
         print(f"agent-forge not found at {af}", file=sys.stderr)
         return 1
@@ -80,7 +91,11 @@ def _dispatch_content(rest: list[str]) -> int:
     if not script:
         print(f"unknown content subcommand: {sub}\n  known: {', '.join(CONTENT_SCRIPTS)}")
         return 2
-    return subprocess.run(["python3", str(af / script), *args], cwd=str(af)).returncode
+    python = content.resolve_command()
+    if not python:
+        print("cannot launch content: python3 not found on PATH", file=sys.stderr)
+        return 1
+    return _launch("content", [*python, str(af / script), *args], cwd=str(af))
 
 
 def _dispatch(cap: caps.Capability, rest: list[str], cfg: dict) -> int:
@@ -92,7 +107,7 @@ def _dispatch(cap: caps.Capability, rest: list[str], cfg: dict) -> int:
     if missing:
         print(f"warning: '{cap.name}' needs missing system dep(s): {', '.join(missing)}",
               file=sys.stderr)
-    return subprocess.run([*command, *rest], env=caps.shared_env(cfg)).returncode
+    return _launch(cap.name, [*command, *rest], env=caps.shared_env(cfg))
 
 
 def run_capability(name: str, rest: list[str], cfg: dict | None = None) -> int:

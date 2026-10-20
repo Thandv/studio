@@ -80,6 +80,15 @@ studio code chat --persona security-auditor   # uses an agent-forge persona
 studio content sync   # refresh the agent/skill registry from upstreams
 ```
 
+`studio doctor` reports each capability as ready or as `repo not found: <path>`,
+`broken venv: interpreter <path> missing, rebuild the venv` (a venv script whose
+shebang points at a deleted interpreter) or `not installed`, and **exits 1 when
+any capability is not ready** (0 when all are). Missing system deps (ollama,
+ffmpeg, espeak-ng, `ANTHROPIC_API_KEY`) are warnings and do not change the exit
+code. `swe` needs its own `SWE/.venv/bin/python` (no fallback to system
+`python3`). If a capability cannot be started, studio prints
+`cannot launch <cap>: <error>. Run: studio install <cap>` and exits 1.
+
 ## How it works
 
 - **Thin dispatcher.** `studio <cap>` resolves the capability to a concrete

@@ -31,8 +31,15 @@ reports as one line. `Capability.status()` is the only readiness logic;
 - **passthrough** — a console script in the tool's own venv (`thandv`, `writer`,
   `audiobook`, `build-app`, `vibe`). Resolved as `<repo>/.venv/bin/<script>`,
   falling back to `PATH`. `studio <name> ...args` → `subprocess.run([cmd, *args])`.
-- **driver** — a Python entry script driven directly (`SWE` orchestrator driver).
-- **content** — agent-forge's scripts (`sync`/`build`/`install`/…), run in place.
+- **driver** — a Python entry script driven directly (`SWE` orchestrator driver),
+  run only with the repo's own `.venv/bin/python`.
+- **content** — agent-forge's scripts (`sync`/`build`/`install`/…), run in place
+  with the `python3` found on `PATH`.
+
+A passthrough script only counts as ready if its shebang interpreter exists
+(`#!/abs/path`, `#!/usr/bin/env X` looked up on `PATH`, or pip's `#!/bin/sh`
+trampoline); otherwise `status()` says `broken venv`. `doctor` exits 1 when any
+capability is not ready, and launch `OSError`s become one `cannot launch` line.
 
 ## Why independent venvs
 
