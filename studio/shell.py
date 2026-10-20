@@ -11,7 +11,8 @@ slash-command that hands off the terminal and returns you here when it exits.
   studio> /doctor
   studio> /exit
 
-Bare text (no slash) is sent to the local agent as a one-shot prompt.
+Bare text (no slash) is sent to the local agent as a one-shot prompt, unchanged.
+A command that fails prints `error: <command>: <reason>` and the shell carries on.
 """
 from __future__ import annotations
 
@@ -40,6 +41,44 @@ def _help() -> None:
     print("  (bare text -> one-shot prompt to the local agent)")
 
 
+def _parse(line: str) -> tuple[str, list[str]]:
+    """Split '/cmd args' into ('cmd', args). An unbalanced quote falls back to
+    whitespace: the remainder after the command is passed on as one raw argument."""
+    try:
+        tok = shlex.split(line)
+    except ValueError:
+        tok = line.split(maxsplit=1)
+    return tok[0][1:], tok[1:]
+
+
+def _command(cmd: str, rest: list[str], persona: str, cfg: dict) -> str:
+    """Run one /command; returns the (possibly changed) persona."""
+    if cmd == "help":
+        _help()
+    elif cmd == "doctor":
+        doctor_mod.run()
+    elif cmd == "list":
+        for c in caps.CAPABILITIES:
+            print(f"  {'ready' if c.ready() else '     '}  {c.name:<11} {c.summary}")
+    elif cmd == "persona":
+        if rest:
+            persona = rest[0]
+            print(f"persona set: {persona} (used by /code)")
+        else:
+            print(f"persona: {persona or '(default)'}")
+    elif cmd in CAP_CMDS:
+        args = rest
+        if cmd == "code":
+            # default to interactive chat; apply the chosen persona
+            args = rest or ["chat"]
+            if persona and "--persona" not in args:
+                args = args + ["--persona", persona]
+        cli.run_capability(cmd, args, cfg)
+    else:
+        print(f"unknown command: /{cmd} (try /help)")
+    return persona
+
+
 def run() -> int:
     cfg = cfg_mod.load()
     persona = cfg.get("persona", "")
@@ -52,46 +91,21 @@ def run() -> int:
             return 0
         if not line:
             continue
-        tok = shlex.split(line)
-        head, rest = tok[0], tok[1:]
-        cmd = head[1:] if head.startswith("/") else head
-
-        if cmd in ("exit", "quit"):
+        if line in ("exit", "quit"):
             return 0
-        if cmd == "help":
-            _help(); continue
-        if cmd == "doctor":
-            doctor_mod.run(); continue
-        if cmd == "list":
-            for c in caps.CAPABILITIES:
-                print(f"  {'ready' if c.ready() else '     '}  {c.name:<11} {c.summary}")
-            continue
-        if cmd == "persona":
-            if rest:
-                persona = rest[0]
-                print(f"persona set: {persona} (used by /code)")
+        cmd = "code"
+        try:
+            if line.startswith("/"):
+                cmd, rest = _parse(line)
+                if cmd in ("exit", "quit"):
+                    return 0
+                persona = _command(cmd, rest, persona, cfg)
             else:
-                print(f"persona: {persona or '(default)'}")
-            continue
-
-        if cmd in CAP_CMDS:
-            args = rest
-            if cmd == "code":
-                # default to interactive chat; apply the chosen persona
-                args = rest or ["chat"]
-                if persona and "--persona" not in args:
-                    args = args + ["--persona", persona]
-            cli.run_capability(cmd, args, cfg)
-            continue
-
-        if head.startswith("/"):
-            print(f"unknown command: {head} (try /help)")
-            continue
-
-        # bare text -> one-shot prompt to the local agent
-        args = ["chat", line] + (["--persona", persona] if persona else [])
-        cli.run_capability("code", args, cfg)
-    return 0
+                # bare text -> one-shot prompt to the local agent, the raw line intact
+                args = ["chat", line] + (["--persona", persona] if persona else [])
+                cli.run_capability("code", args, cfg)
+        except Exception as e:  # noqa: BLE001 - one failing command must not end the session
+            print(f"error: {cmd}: {e}", file=sys.stderr)
 
 
 if __name__ == "__main__":

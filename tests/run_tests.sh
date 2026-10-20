@@ -253,6 +253,29 @@ err="$(sb STUDIO_BASE="$B" PATH="$SB/badpy" "$PY" -m studio content sync 2>&1 >/
 [ "$rc" -eq 1 ] && [ "$(printf '%s\n' "$err" | grep -c '^cannot launch content: ')" -eq 1 ] && ! printf '%s' "$err" | grep -q Traceback
 chk 0 $? "content launch failure: one 'cannot launch' line, exit 1, no traceback"
 
+# --- STU-3: shell survives unbalanced quotes and a failing command ---
+# Stubs only: thandv and writer record their argv; nothing real runs.
+B="$SB/shell"; mkdir -p "$B"; T="$B/thandv/.venv/bin/thandv"; W="$B/writer/.venv/bin/writer"
+fake_script "$T"; fake_script "$W"
+shell(){ printf "$1" | sb STUDIO_BASE="$B" "$PY" -m studio shell 2>"$SB/shell.err" >/dev/null; }
+noerr(){ ! grep -q Traceback "$SB/shell.err"; }
+shell "what's in this repo?\n/exit\n"; rc=$?
+[ "$rc" -eq 0 ] && noerr && [ "$(cat "$T.argv")" = "$(printf "chat\nwhat's in this repo?")" ]
+chk 0 $? "shell: bare text with an apostrophe reaches the agent stub unchanged, exit 0"
+rm -f "$T.argv"; shell 'code "unterminated\n/exit\n'; rc=$?
+[ "$rc" -eq 0 ] && noerr && [ "$(cat "$T.argv")" = "$(printf 'chat\ncode "unterminated')" ]
+chk 0 $? "shell: bare 'code \"unterminated' reaches the agent stub as the whole line, exit 0"
+shell '/write "unterminated quote\n/exit\n'; rc=$?
+[ "$rc" -eq 0 ] && noerr && [ "$(cat "$W.argv")" = '"unterminated quote' ]
+chk 0 $? "shell: /command with an unbalanced quote passes the remainder as one raw argument"
+rm -f "$T.argv"; mkdir -p "$SB/shell-home"
+printf '{"repos": {"write": "../escape"}}\n' > "$SB/shell-home/config.json"
+printf '/write x\n/code hello\n' | sb STUDIO_BASE="$B" STUDIO_HOME="$SB/shell-home" "$PY" -m studio shell 2>"$SB/shell.err" >/dev/null; rc=$?
+[ "$rc" -eq 0 ] && noerr && grep -q '^error: write: repos.write' "$SB/shell.err" && [ "$(cat "$T.argv")" = hello ]
+chk 0 $? "shell: a dispatch that raises prints 'error: <cmd>: ...', the next command runs, exit 0"
+printf '/persona x\n' | sb STUDIO_BASE="$B" "$PY" -m studio shell >/dev/null 2>&1; chk 0 $? "shell: EOF still exits 0"
+rm -f "$T.argv"; shell 'exit\n/code never\n'; [ $? -eq 0 ] && [ ! -e "$T.argv" ]; chk 0 $? "shell: bare 'exit' still leaves"
+
 echo
 if [ "$fails" -eq 0 ]; then echo "ALL TESTS PASSED"; else echo "$fails FAILED"; fi
 exit $((fails>0?1:0))

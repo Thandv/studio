@@ -69,6 +69,12 @@ studio> review this repo for me   # bare text -> one-shot prompt to the local ag
 studio> /exit
 ```
 
+Bare text goes to the local agent exactly as typed (apostrophes and stray quotes
+included). A `/command` with an unbalanced quote passes everything after the
+command as one argument. If a command fails, the shell prints
+`error: <command>: <reason>` and keeps running; Ctrl-C, Ctrl-D, `/exit` and a bare
+`exit` leave.
+
 ## Quickstart
 
 ```bash
