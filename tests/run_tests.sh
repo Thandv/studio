@@ -15,6 +15,7 @@ chk(){ if [ "$1" -eq "$2" ]; then pass "$3"; else fail "$3 (want exit $1 got $2)
 # base (<repo-root>/..) is a temp dir too.
 PY="$(command -v python3)"
 SB="$(mktemp -d)"; trap 'rm -rf "$SB"' EXIT
+SBR="$(cd "$SB" && pwd -P)"  # $SB with symlinks resolved (macOS: /var -> /private/var)
 mkdir -p "$SB/home"
 sb(){ env -i HOME="$SB/home" STUDIO_HOME="$SB/home/.studio" PATH=/usr/bin:/bin LANG=C.UTF-8 "$@"; }
 # fake_base <dir>: a launcher copy at <dir>/studio, no siblings yet.
@@ -224,7 +225,7 @@ B="$SB/swe"; mkdir -p "$B/SWE/binary/driver"; : > "$B/SWE/binary/driver/orchestr
 sb STUDIO_BASE="$B" "$PY" -m studio list 2>&1 | grep -q '^  swe  *not installed$'
 chk 0 $? "swe with no .venv/bin/python is not ready though python3 is on PATH"
 mkdir -p "$B/SWE/.venv/bin"; ln -s "$SB/gone/python3.12" "$B/SWE/.venv/bin/python"
-sb STUDIO_BASE="$B" "$PY" -m studio list 2>&1 | grep -q "^  swe  *broken venv: interpreter $SB/gone/python3.12 missing"
+sb STUDIO_BASE="$B" "$PY" -m studio list 2>&1 | grep -q "^  swe  *broken venv: interpreter $SBR/gone/python3.12 missing"
 chk 0 $? "swe whose .venv/bin/python dangles is 'broken venv'"
 
 # shebang forms: env, env with a missing program, pip's /bin/sh trampoline, args, none.
@@ -334,7 +335,7 @@ fake_script "$W" '#!/usr/bin/env -u FOO python3'; [ "$(st)" = ready ]; chk 0 $? 
 fake_script "$W" '#!/usr/bin/env -C /tmp python3';  [ "$(st)" = ready ]; chk 0 $? "env shebang skips the argument of -C"
 B2="$SB/rvswe"; mkdir -p "$B2/SWE/binary/driver" "$B2/SWE/.venv/bin"; : > "$B2/SWE/binary/driver/orchestrator_driver.py"
 ln -s "$SB/gone/python3.12" "$B2/SWE/.venv/bin/python3"; ln -s python3 "$B2/SWE/.venv/bin/python"
-sb STUDIO_BASE="$B2" "$PY" -m studio list 2>&1 | grep -q "^  swe  *broken venv: interpreter $SB/gone/python3.12 missing"
+sb STUDIO_BASE="$B2" "$PY" -m studio list 2>&1 | grep -q "^  swe  *broken venv: interpreter $SBR/gone/python3.12 missing"
 chk 0 $? "a dangling venv python chain names the final missing target"
 
 # launch errors other than 'not found', and content with no python3
@@ -353,7 +354,8 @@ B4="$SB/shell"; rm -f "$B4/thandv/.venv/bin/thandv.argv"
 printf '/exit\n/code never\n' | sb STUDIO_BASE="$B4" "$PY" -m studio shell >/dev/null 2>&1; rc=$?
 [ "$rc" -eq 0 ] && [ ! -e "$B4/thandv/.venv/bin/thandv.argv" ]; chk 0 $? "shell: /exit leaves before the next command"
 fake_script "$B4/writer/.venv/bin/writer" "#!$SB/gone/python"
-printf '/list\n' | sb STUDIO_BASE="$B4" "$PY" -m studio shell 2>&1 | grep -q '^  write  *broken venv: interpreter'
+out="$(printf '/list\n' | sb STUDIO_BASE="$B4" "$PY" -m studio shell 2>&1)"
+printf '%s\n' "$out" | grep -q '^  write  *broken venv: interpreter'
 chk 0 $? "shell: /list shows each capability's status() reason"
 
 echo
