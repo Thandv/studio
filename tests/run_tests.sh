@@ -31,12 +31,14 @@ assert not on_path, f"real sibling tools on the sandbox PATH: {on_path}"
 PY
 chk 0 $? "sandbox PATH has no real sibling tools"
 
-python3 -m studio --help >/dev/null 2>&1; chk 0 $? "studio --help"
-python3 -m studio list   >/dev/null 2>&1; chk 0 $? "studio list"
-python3 -m studio config >/dev/null 2>&1; chk 0 $? "studio config"
-python3 -m studio totally-not-a-cap >/dev/null 2>&1; chk 2 $? "unknown capability -> exit 2"
-printf '/help\n/list\n/exit\n' | python3 -m studio shell >/dev/null 2>&1; chk 0 $? "shell /help /list /exit"
-printf '' | python3 -m studio shell >/dev/null 2>&1; chk 0 $? "shell EOF exits clean"
+EMPTY="$SB/empty"
+sbe(){ sb STUDIO_BASE="$EMPTY" "$PY" "$@"; }
+sbe -m studio --help >/dev/null 2>&1; chk 0 $? "studio --help"
+sbe -m studio list   >/dev/null 2>&1; chk 0 $? "studio list"
+sbe -m studio config >/dev/null 2>&1; chk 0 $? "studio config"
+sbe -m studio totally-not-a-cap >/dev/null 2>&1; chk 2 $? "unknown capability -> exit 2"
+printf '/help\n/list\n/exit\n' | sbe -m studio shell >/dev/null 2>&1; chk 0 $? "shell /help /list /exit"
+printf '' | sbe -m studio shell >/dev/null 2>&1; chk 0 $? "shell EOF exits clean"
 
 python3 - <<'PY'
 import sys
@@ -58,6 +60,7 @@ python3 - <<'PY'
 import sys, tempfile, subprocess
 sys.path.insert(0, ".")
 from pathlib import Path
+from studio import capabilities as caps
 from studio.improve import backends, improve
 from studio.improve.runner import _safe, _extract_json, _parse_action
 
@@ -86,7 +89,7 @@ assert _parse_action('{"action":"read_file","path":"x"}')["action"] == "read_fil
 
 # improve helpers: test-cmd detection + target resolution
 assert improve.detect_test_cmd(Path(".")) == ["bash", "tests/run_tests.sh"]
-assert improve.resolve_target("studio").name == "studio"
+assert improve.resolve_target("studio") == caps.STUDIO_ROOT
 
 # worktree isolation on a throwaway repo (proves edits never touch the live tree)
 d = Path(tempfile.mkdtemp())
@@ -275,6 +278,75 @@ printf '/write x\n/code hello\n' | sb STUDIO_BASE="$B" STUDIO_HOME="$SB/shell-ho
 chk 0 $? "shell: a dispatch that raises prints 'error: <cmd>: ...', the next command runs, exit 0"
 printf '/persona x\n' | sb STUDIO_BASE="$B" "$PY" -m studio shell >/dev/null 2>&1; chk 0 $? "shell: EOF still exits 0"
 rm -f "$T.argv"; shell 'exit\n/code never\n'; [ $? -eq 0 ] && [ ! -e "$T.argv" ]; chk 0 $? "shell: bare 'exit' still leaves"
+
+# --- review: cases the independent review's mutation run showed were unpinned ---
+B="$SB/rv"; mkdir -p "$B" "$SB/rvh"; fake_script "$B/writer/.venv/bin/writer"; RH="$SB/rvh"
+lst(){ sb STUDIO_BASE="$B" STUDIO_HOME="$RH" "$@" "$PY" -m studio list 2>&1; }
+for bad in '{"repos": {"write": 5}}' '{"repos": ["write"]}'; do
+  printf '%s\n' "$bad" > "$RH/config.json"
+  out="$(lst)"; rc=$?
+  err="$(sb STUDIO_BASE="$B" STUDIO_HOME="$RH" "$PY" -m studio write 2>&1 >/dev/null)"; drc=$?
+  [ "$rc" -eq 0 ] && printf '%s\n' "$out" | grep -q '^  write  *bad config: ' \
+    && [ "$drc" -eq 2 ] && printf '%s' "$err" | grep -q 'config error:' && ! printf '%s' "$err" | grep -q Traceback
+  chk 0 $? "malformed repos config $bad: list says 'bad config' (exit 0), dispatch exits 2 without traceback"
+done
+printf '{"repos": {"write": "../outside"}}\n' > "$RH/config.json"
+out="$(lst)"; rc=$?; [ "$rc" -eq 0 ] && [ "$(printf '%s\n' "$out" | grep -c '^  [a-z][a-z-]* ')" -eq 7 ]
+chk 0 $? "list with an escaping override still lists all 7 and exits 0"
+mkdir -p "$B/inside"; ln -s /usr "$B/inside/lnk"
+printf '{"repos": {"write": "inside/lnk/w"}}\n' > "$RH/config.json"
+lst | grep -q "^  write  *bad config: repos.write 'inside/lnk/w' escapes the base"
+chk 0 $? "a relative override escaping the base through a symlink is rejected"
+mkdir -p "$RH/home/b2"; fake_script "$RH/home/b2/writer/.venv/bin/writer"
+printf '{"base_dir": "~/b2"}\n' > "$RH/config.json"
+sb HOME="$RH/home" STUDIO_BASE= STUDIO_HOME="$RH" "$PY" -m studio list 2>&1 | grep -q '^  write  *ready$'
+chk 0 $? "base_dir expands ~ and an empty STUDIO_BASE falls through to it"
+printf '{"repos": {"write": "~/b2/writer"}}\n' > "$RH/config.json"
+sb HOME="$RH/home" STUDIO_BASE="$SB/x" STUDIO_HOME="$RH" "$PY" -m studio list 2>&1 | grep -q '^  write  *ready$'
+chk 0 $? "a repos override expands ~"
+printf '{"base_dir": "rel/base"}\n' > "$RH/config.json"
+err="$(sb STUDIO_HOME="$RH" "$PY" -m studio config 2>&1 >/dev/null)"; rc=$?
+[ "$rc" -eq 2 ] && printf '%s' "$err" | grep -q "base_dir 'rel/base' must be an absolute path" && ! printf '%s' "$err" | grep -q Traceback
+chk 0 $? "a relative base_dir is rejected with one config error"
+sb STUDIO_BASE="$B" "$PY" -c 'from studio import capabilities as c; from studio.improve import improve as i
+assert i.resolve_target("studio") == c.STUDIO_ROOT and i.resolve_target("write") == c.base() / "writer"'
+chk 0 $? "improve --target studio is the launcher root even under STUDIO_BASE"
+
+# shebang edge cases
+W="$B/writer/.venv/bin/writer"; rm -f "$RH/config.json"
+st(){ sb STUDIO_BASE="$B" PATH="$SB/pybin:/usr/bin:/bin" "$PY" -m studio list 2>&1 | sed -n 's/^  write  *//p'; }
+tramp(){ fake_script "$W" "$(printf '#!/bin/sh\n%sexec%s %s "$0" "$@"\n%s' "'''" "'" "$1" "' '''")"; }
+tramp "$SB/gone/python"; [ "$(st)" = "broken venv: interpreter $SB/gone/python missing, rebuild the venv" ]
+chk 0 $? "unquoted pip trampoline to a missing python is 'broken venv'"
+tramp "\"$SB/$(printf 'd%.0s' $(seq 260))/python\""; [ "$(st)" = ready ]
+chk 0 $? "a trampoline path cut off by the 256-byte read is not called broken"
+fake_script "$W" '#!'; [ "$(st)" = "empty shebang in $W" ]; chk 0 $? "an empty shebang is not ready"
+fake_script "$W" '#!/usr/bin/env FOO=1 no-such-interp'
+[ "$(st)" = "broken venv: interpreter no-such-interp (via /usr/bin/env) missing, rebuild the venv" ]
+chk 0 $? "env shebang skips NAME=VALUE before the program"
+fake_script "$W" '#!/usr/bin/env -u FOO python3'; [ "$(st)" = ready ]; chk 0 $? "env shebang skips the argument of -u"
+B2="$SB/rvswe"; mkdir -p "$B2/SWE/binary/driver" "$B2/SWE/.venv/bin"; : > "$B2/SWE/binary/driver/orchestrator_driver.py"
+ln -s "$SB/gone/python3.12" "$B2/SWE/.venv/bin/python3"; ln -s python3 "$B2/SWE/.venv/bin/python"
+sb STUDIO_BASE="$B2" "$PY" -m studio list 2>&1 | grep -q "^  swe  *broken venv: interpreter $SB/gone/python3.12 missing"
+chk 0 $? "a dangling venv python chain names the final missing target"
+
+# launch errors other than 'not found', and content with no python3
+fake_script "$W"; chmod -x "$W"
+err="$(sb STUDIO_BASE="$B" "$PY" -m studio write 2>&1 >/dev/null)"; rc=$?
+[ "$rc" -eq 1 ] && printf '%s' "$err" | grep -q '^cannot launch write: .*Permission denied' && ! printf '%s' "$err" | grep -q Traceback
+chk 0 $? "a non-executable script: one 'cannot launch' line (any OSError), exit 1"
+B3="$SB/rvcontent"; mkdir -p "$B3/agent-forge/scripts"
+err="$(sb STUDIO_BASE="$B3" PATH="$SB/nopy" "$PY" -m studio content sync 2>&1 >/dev/null)"; rc=$?
+[ "$rc" -eq 1 ] && [ "$err" = "cannot launch content: python3 not found on PATH" ]
+chk 0 $? "content with no python3 on PATH: one 'cannot launch' line, exit 1"
+
+# shell: /exit really leaves; /list is the same status() view as `studio list`
+B4="$SB/shell"; rm -f "$B4/thandv/.venv/bin/thandv.argv"
+printf '/exit\n/code never\n' | sb STUDIO_BASE="$B4" "$PY" -m studio shell >/dev/null 2>&1; rc=$?
+[ "$rc" -eq 0 ] && [ ! -e "$B4/thandv/.venv/bin/thandv.argv" ]; chk 0 $? "shell: /exit leaves before the next command"
+fake_script "$B4/writer/.venv/bin/writer" "#!$SB/gone/python"
+printf '/list\n' | sb STUDIO_BASE="$B4" "$PY" -m studio shell 2>&1 | grep -q '^  write  *broken venv: interpreter'
+chk 0 $? "shell: /list shows each capability's status() reason"
 
 echo
 if [ "$fails" -eq 0 ]; then echo "ALL TESTS PASSED"; else echo "$fails FAILED"; fi

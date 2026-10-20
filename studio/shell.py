@@ -58,8 +58,7 @@ def _command(cmd: str, rest: list[str], persona: str, cfg: dict) -> str:
     elif cmd == "doctor":
         doctor_mod.run()
     elif cmd == "list":
-        for c in caps.CAPABILITIES:
-            print(f"  {'ready' if c.ready() else '     '}  {c.name:<11} {c.summary}")
+        cli.print_list()
     elif cmd == "persona":
         if rest:
             persona = rest[0]

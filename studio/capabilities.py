@@ -22,11 +22,25 @@ READY = "ready"
 
 
 # pip's long-path launcher: "#!/bin/sh" then a line '''exec' "<python>" "$0" "$@".
-_TRAMPOLINE = re.compile(r"""^'''exec' (?:"([^"]+)"|(\S+))""", re.MULTILINE)
+# The path must end inside the bytes read: a cut-off path proves nothing.
+_TRAMPOLINE = re.compile(r"""^'''exec' (?:"([^"]+)"|([^\s"]\S*)(?=\s))""", re.MULTILINE)
+_ENV_OPTS_WITH_ARG = {"-u", "--unset", "-C", "--chdir"}
 
 
 def _broken(interpreter: str) -> str:
     return f"broken venv: interpreter {interpreter} missing, rebuild the venv"
+
+
+def _env_program(args: list[str]) -> str | None:
+    """The program a '#!/usr/bin/env ...' line runs: skips options (and the
+    argument of -u/-C) and NAME=VALUE assignments."""
+    words = iter(args)
+    for word in words:
+        if word in _ENV_OPTS_WITH_ARG:
+            next(words, None)
+        elif not word.startswith("-") and "=" not in word:
+            return word
+    return None
 
 
 def script_problem(script: Path) -> str | None:
@@ -50,8 +64,8 @@ def script_problem(script: Path) -> str | None:
     if not Path(interp).is_file():
         return _broken(interp)
     if Path(interp).name == "env":
-        prog = next((a for a in args if not a.startswith("-")), None)
-        if prog is not None and "=" not in prog and shutil.which(prog) is None:
+        prog = _env_program(args)
+        if prog is not None and shutil.which(prog) is None:
             return _broken(f"{prog} (via {interp})")
     tramp = _TRAMPOLINE.search(head)
     if tramp:
@@ -72,7 +86,10 @@ def base(cfg: dict | None = None) -> Path:
         return Path(env).expanduser()
     cfg = config.load() if cfg is None else cfg
     if cfg.get("base_dir"):
-        return Path(cfg["base_dir"]).expanduser()
+        configured = Path(cfg["base_dir"]).expanduser()
+        if not configured.is_absolute():
+            raise ConfigError(f"base_dir '{cfg['base_dir']}' must be an absolute path")
+        return configured
     return DEFAULT_BASE
 
 
@@ -106,7 +123,7 @@ class Capability:
         if path.is_absolute():
             return path
         joined = Path(os.path.normpath(root / path))
-        if not joined.is_relative_to(Path(os.path.normpath(root))):
+        if not Path(os.path.realpath(joined)).is_relative_to(os.path.realpath(root)):
             raise ConfigError(f"repos.{self.name} '{override}' escapes the base {root}")
         return joined
 
@@ -145,7 +162,7 @@ class Capability:
             return f"repo not found: {repo}"
         py = self.venv_python()
         if self.kind == "driver" and py.is_symlink() and not py.exists():
-            return _broken(os.readlink(py))
+            return _broken(os.path.realpath(py))
         command = self.resolve_command()
         if command is None:
             return "not installed"

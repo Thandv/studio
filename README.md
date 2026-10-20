@@ -107,10 +107,11 @@ code. `swe` needs its own `SWE/.venv/bin/python` (no fallback to system
 - **One config.** `~/.studio/config.json` (model backend, home). `studio config`.
 - **Where the tools live.** The sibling repos sit flat under one base directory:
   `thandv`, `local_ai`, `writer`, `audiobook-converter`, `SWE`, `agent-forge`.
-  The base is `$STUDIO_BASE` if set, else `base_dir` in the config, else the
-  directory that contains this studio checkout (`~` is expanded). To point one
-  capability elsewhere, set `"repos": {"write": "/path/to/writer"}` in the config
-  (absolute, or relative to the base; a relative path may not leave the base).
+  The base is `$STUDIO_BASE` if set, else `base_dir` in the config (an absolute
+  path), else the directory that contains this studio checkout (`~` is expanded).
+  To point one capability elsewhere, set `"repos": {"write": "/path/to/writer"}`
+  in the config (absolute, or relative to the base; a relative path may not
+  leave the base, symlinks included).
   `studio list` shows each capability's status and repo path; `studio config`
   also prints the resolved base.
 - **Stdlib only.** The launcher has zero dependencies.

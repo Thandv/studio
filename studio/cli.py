@@ -45,14 +45,15 @@ def _usage() -> None:
     print("\n('!' = not installed yet — run `studio install <name>`)")
 
 
-def _repo_label(cap: caps.Capability) -> str:
+def _repo_label(cap: caps.Capability, cfg: dict | None = None) -> str:
     try:
-        return str(cap.repo_path())
+        return str(cap.repo_path(cfg))
     except caps.ConfigError as e:
         return f"(bad config: {e})"
 
 
-def _list() -> None:
+def print_list() -> None:
+    """Each capability's status() and repo path; shared by `studio list` and the shell."""
     for c in caps.CAPABILITIES:
         print(f"  {c.name:<11} {c.status()}")
         print(f"  {'':<11} repo: {_repo_label(c)}")
@@ -64,7 +65,7 @@ def _show_config() -> None:
     print(json.dumps(cfg, indent=2))
     print(f"\n# resolved base: {caps.base(cfg)}")
     for c in caps.CAPABILITIES:
-        print(f"#   {c.name:<11} {_repo_label(c)}")
+        print(f"#   {c.name:<11} {_repo_label(c, cfg)}")
 
 
 def _launch(name: str, command: list[str], *, cwd: str | None = None,
@@ -148,7 +149,7 @@ def _main(argv: list[str] | None) -> int:
     if cmd == "install":
         return install_mod.run(only=rest[0] if rest else None)
     if cmd in ("list", "ls"):
-        _list()
+        print_list()
         return 0
     if cmd == "config":
         _show_config()
