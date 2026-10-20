@@ -12,22 +12,62 @@ import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# studio repo is <base>/studio ; siblings live under <base>.
-BASE = Path(__file__).resolve().parents[2]
+from . import config
+
+# This launcher's own repo root; by default its siblings live next to it.
+STUDIO_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_BASE = STUDIO_ROOT.parent
+READY = "ready"
+
+
+class ConfigError(ValueError):
+    """A base_dir / repos setting in the config that cannot be used."""
+
+
+def base(cfg: dict | None = None) -> Path:
+    """Directory holding the sibling repos: $STUDIO_BASE, then cfg base_dir, then default."""
+    env = os.environ.get("STUDIO_BASE")
+    if env:
+        return Path(env).expanduser()
+    cfg = config.load() if cfg is None else cfg
+    if cfg.get("base_dir"):
+        return Path(cfg["base_dir"]).expanduser()
+    return DEFAULT_BASE
 
 
 @dataclass(frozen=True)
 class Capability:
     name: str
     summary: str
-    repo: str                      # path relative to BASE
+    repo: str                      # default path relative to base()
     kind: str = "passthrough"      # passthrough | driver | content
     script: str = ""               # console-script name (passthrough)
     driver: str = ""               # path to a python driver, relative to repo (driver)
     needs: tuple[str, ...] = ()     # required system deps / markers
 
-    def repo_path(self) -> Path:
-        return BASE / self.repo
+    def repo_path(self, cfg: dict | None = None) -> Path:
+        """This capability's repo: a cfg['repos'][name] override, else base()/repo.
+
+        Raises ConfigError for a malformed override or a relative one that
+        escapes the base.
+        """
+        cfg = config.load() if cfg is None else cfg
+        root = base(cfg)
+        overrides = cfg.get("repos") or {}
+        if not isinstance(overrides, dict):
+            raise ConfigError("'repos' must map capability names to paths")
+        override = overrides.get(self.name)
+        if override is None:
+            return root / self.repo
+        if not isinstance(override, str) or not override:
+            raise ConfigError(f"repos.{self.name} must be a non-empty path string")
+        path = Path(override).expanduser()
+        if path.is_absolute():
+            return path
+        joined = Path(os.path.normpath(root / path))
+        if not joined.is_relative_to(Path(os.path.normpath(root))):
+            raise ConfigError(f"repos.{self.name} '{override}' escapes the base {root}")
+        return joined
 
     def venv_python(self) -> Path:
         return self.repo_path() / ".venv" / "bin" / "python"
@@ -52,19 +92,32 @@ class Capability:
         which = shutil.which(self.script)
         return [which] if which else None
 
+    def status(self) -> str:
+        """The single readiness verdict: 'ready', 'repo not found: <path>',
+        'not installed', or 'bad config: <why>'."""
+        try:
+            repo = self.repo_path()
+        except ConfigError as e:
+            return f"bad config: {e}"
+        if not repo.exists():
+            return f"repo not found: {repo}"
+        if self.resolve_command() is None:
+            return "not installed"
+        return READY
+
     def ready(self) -> bool:
-        return self.resolve_command() is not None
+        return self.status() == READY
 
 
 CAPABILITIES: list[Capability] = [
     Capability("code", "Chat / code with the local agent (thandv)",
-               "repos/thandv", script="thandv", needs=("ollama",)),
+               "thandv", script="thandv", needs=("ollama",)),
     Capability("build-app", "Autonomously build an app from an idea (local_ai)",
-               "repos/local_ai", script="build-app", needs=("ollama",)),
+               "local_ai", script="build-app", needs=("ollama",)),
     Capability("vibe", "Interactive vibe-coder (local_ai)",
-               "repos/local_ai", script="vibe", needs=("ollama",)),
+               "local_ai", script="vibe", needs=("ollama",)),
     Capability("write", "Multi-agent writing / novel pipeline (writer)",
-               "repos/writer", script="writer", needs=("ollama",)),
+               "writer", script="writer", needs=("ollama",)),
     Capability("audiobook", "Manuscript -> audiobook M4B (audiobook-converter)",
                "audiobook-converter", script="audiobook", needs=("ffmpeg", "espeak-ng")),
     Capability("swe", "Markdown agent team ships software end-to-end (SWE)",

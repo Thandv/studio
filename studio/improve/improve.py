@@ -57,9 +57,9 @@ def resolve_target(name_or_path: str) -> Path:
     if cap is not None and cap.kind != "content":
         return cap.repo_path()
     if name_or_path in ("studio", ""):
-        return caps.BASE / "studio"
+        return caps.STUDIO_ROOT
     p = Path(name_or_path).expanduser()
-    return p if p.is_absolute() else (caps.BASE / name_or_path)
+    return p if p.is_absolute() else (caps.base() / name_or_path)
 
 
 def detect_test_cmd(root: Path) -> list[str]:

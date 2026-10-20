@@ -7,13 +7,24 @@ runs the independent tools you already have, with one shared config.
 studio/
   studio/
     cli.py           # arg dispatch: meta commands + capability pass-through
-    capabilities.py  # the registry: Capability(name, repo, kind, script/driver, needs)
-    config.py        # ~/.studio/config.json (ollama_host, default_model, home)
+    capabilities.py  # the registry: Capability(name, repo, kind, script/driver, needs),
+                     # base() resolution and Capability.status()
+    config.py        # ~/.studio/config.json (ollama_host, default_model, base_dir, repos)
     install.py       # per-repo venv setup + agent-forge content install
     doctor.py        # system-dep + readiness checks
   install.sh         # bootstrap the launcher, then `studio install`
   Dockerfile         # experimental Linux image (capabilities baked in)
 ```
+
+## Locating the repos
+
+`capabilities.base()` is read at call time: `$STUDIO_BASE`, then `base_dir` from
+the config, then the directory containing this checkout. Each capability's repo
+is `base()/<name>` (flat: `thandv`, `local_ai`, `writer`, `audiobook-converter`,
+`SWE`, `agent-forge`) unless `repos.<capability>` in the config overrides it; a
+relative override that escapes the base raises `ConfigError`, which the CLI
+reports as one line. `Capability.status()` is the only readiness logic;
+`list`, `doctor` and `config` all use it. `config` never imports `capabilities`.
 
 ## Capability kinds
 

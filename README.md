@@ -90,13 +90,21 @@ studio content sync   # refresh the agent/skill registry from upstreams
 - **Shared content.** `studio install` builds agent-forge's `thandv` view and
   installs it, so `studio code` gets the curated personas/skills out of the box.
 - **One config.** `~/.studio/config.json` (model backend, home). `studio config`.
+- **Where the tools live.** The sibling repos sit flat under one base directory:
+  `thandv`, `local_ai`, `writer`, `audiobook-converter`, `SWE`, `agent-forge`.
+  The base is `$STUDIO_BASE` if set, else `base_dir` in the config, else the
+  directory that contains this studio checkout (`~` is expanded). To point one
+  capability elsewhere, set `"repos": {"write": "/path/to/writer"}` in the config
+  (absolute, or relative to the base; a relative path may not leave the base).
+  `studio list` shows each capability's status and repo path; `studio config`
+  also prints the resolved base.
 - **Stdlib only.** The launcher has zero dependencies.
 
 ## Docker
 
-`./docker-build.sh` builds a Linux image (`Dockerfile`) that clones the available
-capability repos (thandv, agent-forge, writer, SWE) and runs `studio install`
-in-image. Point it at a host/sidecar Ollama:
+`./docker-build.sh` builds a Linux image (`Dockerfile`) that clones the
+capability repos flat under `/opt/Claude` (with `STUDIO_BASE=/opt/Claude`) and
+runs `studio install` in-image. The image has not been built or tested yet. Point it at a host/sidecar Ollama:
 
 ```bash
 ./docker-build.sh

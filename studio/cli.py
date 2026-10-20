@@ -6,14 +6,15 @@
   studio doctor                   check system deps + capability readiness
   studio install [capability]     set up capabilities (venvs) + content
   studio improve [--target ..]    safe self-improvement loop (research->test->PR)
-  studio list                     list capabilities and readiness
-  studio config                   show config (~/.studio/config.json)
+  studio list                     list capabilities, readiness and repo paths
+  studio config                   show config, the resolved base and repo paths
 
 Capabilities: code, build-app, vibe, write, audiobook, swe, content.
 Every capability shares one model backend (OLLAMA_HOST) and home.
 """
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 
@@ -42,6 +43,28 @@ def _usage() -> None:
         ready = "  " if c.ready() else " !"
         print(f" {ready} {c.name:<11} {c.summary}")
     print("\n('!' = not installed yet — run `studio install <name>`)")
+
+
+def _repo_label(cap: caps.Capability) -> str:
+    try:
+        return str(cap.repo_path())
+    except caps.ConfigError as e:
+        return f"(bad config: {e})"
+
+
+def _list() -> None:
+    for c in caps.CAPABILITIES:
+        print(f"  {c.name:<11} {c.status()}")
+        print(f"  {'':<11} repo: {_repo_label(c)}")
+
+
+def _show_config() -> None:
+    cfg = cfg_mod.load()
+    print(f"# {cfg_mod.CONFIG_PATH}")
+    print(json.dumps(cfg, indent=2))
+    print(f"\n# resolved base: {caps.base(cfg)}")
+    for c in caps.CAPABILITIES:
+        print(f"#   {c.name:<11} {_repo_label(c)}")
 
 
 def _dispatch_content(rest: list[str]) -> int:
@@ -85,6 +108,14 @@ def run_capability(name: str, rest: list[str], cfg: dict | None = None) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    try:
+        return _main(argv)
+    except caps.ConfigError as e:
+        print(f"studio: config error: {e} (fix {cfg_mod.CONFIG_PATH})", file=sys.stderr)
+        return 2
+
+
+def _main(argv: list[str] | None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] in ("-h", "--help", "help"):
         _usage()
@@ -102,12 +133,10 @@ def main(argv: list[str] | None = None) -> int:
     if cmd == "install":
         return install_mod.run(only=rest[0] if rest else None)
     if cmd in ("list", "ls"):
-        for c in caps.CAPABILITIES:
-            print(f"  {'ready' if c.ready() else '     ':<6} {c.name:<11} {c.summary}")
+        _list()
         return 0
     if cmd == "config":
-        print(f"# {cfg_mod.CONFIG_PATH}")
-        print(__import__("json").dumps(cfg_mod.load(), indent=2))
+        _show_config()
         return 0
     if cmd == "improve":
         import argparse

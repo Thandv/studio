@@ -11,6 +11,11 @@ CONFIG_PATH = STUDIO_HOME / "config.json"
 DEFAULTS = {
     "ollama_host": os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434"),
     "default_model": "",            # empty -> each tool auto-picks
+    # Where the sibling repos live. $STUDIO_BASE wins; empty -> the directory
+    # that contains this studio checkout. `repos` maps a capability name to an
+    # absolute path, or to a path relative to the base (it may not escape it).
+    "base_dir": "",
+    "repos": {},
     "agent_forge_install": "thandv",  # which content view to install on `studio install`
     # studio improve defaults (override per-run with flags). To use a free hosted
     # model, set improve_backend to groq|cerebras|openrouter and export its API key

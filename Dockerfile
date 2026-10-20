@@ -25,14 +25,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         git build-essential ffmpeg espeak-ng ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Mirror the local layout so studio's capability registry resolves repo paths.
+# Flat sibling layout under one base, named as studio's registry expects;
+# STUDIO_BASE points the launcher at it.
 WORKDIR /opt/Claude
+ENV STUDIO_BASE=/opt/Claude
 RUN set -eux; \
-    git clone --depth 1 "$THANDV_URL"     repos/thandv; \
+    git clone --depth 1 "$THANDV_URL"     thandv; \
     git clone --depth 1 "$AGENTFORGE_URL" agent-forge; \
-    git clone --depth 1 "$WRITER_URL"     repos/writer; \
+    git clone --depth 1 "$WRITER_URL"     writer; \
     git clone --depth 1 "$SWE_URL"        SWE; \
-    if [ -n "$LOCAL_AI_URL" ];  then git clone --depth 1 "$LOCAL_AI_URL"  repos/local_ai; fi; \
+    if [ -n "$LOCAL_AI_URL" ];  then git clone --depth 1 "$LOCAL_AI_URL"  local_ai; fi; \
     if [ -n "$AUDIOBOOK_URL" ]; then git clone --depth 1 "$AUDIOBOOK_URL" audiobook-converter; fi
 
 # Launcher (stdlib only).
