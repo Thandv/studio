@@ -7,21 +7,39 @@ runs the independent tools you already have, with one shared config.
 studio/
   studio/
     cli.py           # arg dispatch: meta commands + capability pass-through
-    capabilities.py  # the registry: Capability(name, repo, kind, script/driver, needs)
-    config.py        # ~/.studio/config.json (ollama_host, default_model, home)
+    capabilities.py  # the registry: Capability(name, repo, kind, script/driver, needs),
+                     # base() resolution and Capability.status()
+    config.py        # ~/.studio/config.json (ollama_host, default_model, base_dir, repos)
     install.py       # per-repo venv setup + agent-forge content install
     doctor.py        # system-dep + readiness checks
   install.sh         # bootstrap the launcher, then `studio install`
   Dockerfile         # experimental Linux image (capabilities baked in)
 ```
 
+## Locating the repos
+
+`capabilities.base()` is read at call time: `$STUDIO_BASE`, then `base_dir` from
+the config, then the directory containing this checkout. Each capability's repo
+is `base()/<name>` (flat: `thandv`, `local_ai`, `writer`, `audiobook-converter`,
+`SWE`, `agent-forge`) unless `repos.<capability>` in the config overrides it; a
+relative override that escapes the base raises `ConfigError`, which the CLI
+reports as one line. `Capability.status()` is the only readiness logic;
+`list`, `doctor` and `config` all use it. `config` never imports `capabilities`.
+
 ## Capability kinds
 
 - **passthrough** — a console script in the tool's own venv (`thandv`, `writer`,
   `audiobook`, `build-app`, `vibe`). Resolved as `<repo>/.venv/bin/<script>`,
   falling back to `PATH`. `studio <name> ...args` → `subprocess.run([cmd, *args])`.
-- **driver** — a Python entry script driven directly (`SWE` orchestrator driver).
-- **content** — agent-forge's scripts (`sync`/`build`/`install`/…), run in place.
+- **driver** — a Python entry script driven directly (`SWE` orchestrator driver),
+  run only with the repo's own `.venv/bin/python`.
+- **content** — agent-forge's scripts (`sync`/`build`/`install`/…), run in place
+  with the `python3` found on `PATH`.
+
+A passthrough script only counts as ready if its shebang interpreter exists
+(`#!/abs/path`, `#!/usr/bin/env X` looked up on `PATH`, or pip's `#!/bin/sh`
+trampoline); otherwise `status()` says `broken venv`. `doctor` exits 1 when any
+capability is not ready, and launch `OSError`s become one `cannot launch` line.
 
 ## Why independent venvs
 

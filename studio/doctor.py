@@ -1,4 +1,7 @@
-"""`studio doctor` — check system deps and per-capability readiness."""
+"""`studio doctor` — check system deps and per-capability readiness.
+
+Exits 1 when any capability is not ready; missing system deps are warnings only.
+"""
 from __future__ import annotations
 
 import os
@@ -25,7 +28,7 @@ def run() -> int:
     print("studio doctor\n" + "=" * 40)
     print(f"home:        {cfg_mod.STUDIO_HOME}")
     print(f"ollama_host: {cfg['ollama_host']}")
-    print(f"base dir:    {caps.BASE}\n")
+    print(f"base dir:    {caps.base(cfg)}\n")
 
     print("system dependencies:")
     for dep, desc in SYSTEM_DEPS.items():
@@ -37,14 +40,13 @@ def run() -> int:
     print("\ncapabilities:")
     missing_caps = 0
     for c in caps.CAPABILITIES:
-        ready = c.ready()
-        repo_ok = c.repo_path().exists()
+        status = c.status()
         needs = [d for d in c.needs if not _have(d)]
-        if not ready:
+        if status != caps.READY:
             missing_caps += 1
-            why = "repo not found" if not repo_ok else "not installed (run: studio install %s)" % c.name
+            hint = f" (run: studio install {c.name})" if status == "not installed" else ""
             print(f"  [   ] {c.name:<11} {c.summary}")
-            print(f"        -> {why}")
+            print(f"        -> {status}{hint}")
         else:
             warn = f"  (needs: {', '.join(needs)})" if needs else ""
             print(f"  [ok] {c.name:<11} {c.summary}{warn}")
@@ -61,6 +63,6 @@ def run() -> int:
     print()
     if missing_caps:
         print(f"{missing_caps} capability(ies) not ready — `studio install` to set them up.")
-    else:
-        print("all capabilities ready.")
+        return 1
+    print("all capabilities ready.")
     return 0

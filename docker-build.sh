@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Build the studio Docker image. Capability repos are cloned in-image from
-# GitHub (override the *_URL build args for forks/mirrors/private remotes).
+# GitHub (override the *_URL build args for forks/mirrors/private remotes)
+# into a flat layout under /opt/Claude, with STUDIO_BASE set to it.
 #
 #   ./docker-build.sh                          # build with defaults
 #   ./docker-build.sh --local-ai <git-url>     # also include local_ai

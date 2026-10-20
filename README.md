@@ -69,6 +69,12 @@ studio> review this repo for me   # bare text -> one-shot prompt to the local ag
 studio> /exit
 ```
 
+Bare text goes to the local agent exactly as typed (apostrophes and stray quotes
+included). A `/command` with an unbalanced quote passes everything after the
+command as one argument. If a command fails, the shell prints
+`error: <command>: <reason>` and keeps running; Ctrl-C, Ctrl-D, `/exit` and a bare
+`exit` leave.
+
 ## Quickstart
 
 ```bash
@@ -80,6 +86,15 @@ studio code chat --persona security-auditor   # uses an agent-forge persona
 studio content sync   # refresh the agent/skill registry from upstreams
 ```
 
+`studio doctor` reports each capability as ready or as `repo not found: <path>`,
+`broken venv: interpreter <path> missing, rebuild the venv` (a venv script whose
+shebang points at a deleted interpreter) or `not installed`, and **exits 1 when
+any capability is not ready** (0 when all are). Missing system deps (ollama,
+ffmpeg, espeak-ng, `ANTHROPIC_API_KEY`) are warnings and do not change the exit
+code. `swe` needs its own `SWE/.venv/bin/python` (no fallback to system
+`python3`). If a capability cannot be started, studio prints
+`cannot launch <cap>: <error>. Run: studio install <cap>` and exits 1.
+
 ## How it works
 
 - **Thin dispatcher.** `studio <cap>` resolves the capability to a concrete
@@ -90,13 +105,23 @@ studio content sync   # refresh the agent/skill registry from upstreams
 - **Shared content.** `studio install` builds agent-forge's `thandv` view and
   installs it, so `studio code` gets the curated personas/skills out of the box.
 - **One config.** `~/.studio/config.json` (model backend, home). `studio config`.
+- **Where the tools live.** The sibling repos sit flat under one base directory:
+  `thandv`, `local_ai`, `writer`, `audiobook-converter`, `SWE`, `agent-forge`.
+  The base is `$STUDIO_BASE` if set, else `base_dir` in the config (an absolute
+  path), else the directory that contains this studio checkout (`~` is expanded).
+  To point one capability elsewhere, set `"repos": {"write": "/path/to/writer"}`
+  in the config (absolute, or relative to the base; a relative path may not
+  leave the base; the check is on the path as written, so a
+  symlink inside the base may point anywhere).
+  `studio list` shows each capability's status and repo path; `studio config`
+  also prints the resolved base.
 - **Stdlib only.** The launcher has zero dependencies.
 
 ## Docker
 
-`./docker-build.sh` builds a Linux image (`Dockerfile`) that clones the available
-capability repos (thandv, agent-forge, writer, SWE) and runs `studio install`
-in-image. Point it at a host/sidecar Ollama:
+`./docker-build.sh` builds a Linux image (`Dockerfile`) that clones the
+capability repos flat under `/opt/Claude` (with `STUDIO_BASE=/opt/Claude`) and
+runs `studio install` in-image. The image has not been built or tested yet. Point it at a host/sidecar Ollama:
 
 ```bash
 ./docker-build.sh
