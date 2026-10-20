@@ -293,10 +293,12 @@ done
 printf '{"repos": {"write": "../outside"}}\n' > "$RH/config.json"
 out="$(lst)"; rc=$?; [ "$rc" -eq 0 ] && [ "$(printf '%s\n' "$out" | grep -c '^  [a-z][a-z-]* ')" -eq 7 ]
 chk 0 $? "list with an escaping override still lists all 7 and exits 0"
-mkdir -p "$B/inside"; ln -s /usr "$B/inside/lnk"
-printf '{"repos": {"write": "inside/lnk/w"}}\n' > "$RH/config.json"
-lst | grep -q "^  write  *bad config: repos.write 'inside/lnk/w' escapes the base"
-chk 0 $? "a relative override escaping the base through a symlink is rejected"
+mkdir -p "$SB/elsewhere2/w/.venv/bin" "$B/inside"; fake_script "$SB/elsewhere2/w/.venv/bin/writer"
+ln -s "$SB/elsewhere2" "$B/inside/lnk"; printf '{"repos": {"write": "inside/lnk/w"}}\n' > "$RH/config.json"
+lst | grep -q '^  write  *ready$'; chk 0 $? "a relative override through a symlink inside the base is accepted"
+ln -s "$B" "$SB/rv-link"; printf '{"repos": {"write": "sub/../writer"}}\n' > "$RH/config.json"
+sb STUDIO_BASE="$SB/rv-link" STUDIO_HOME="$RH" "$PY" -m studio list 2>&1 | grep -q '^  write  *ready$'
+chk 0 $? "a relative override under a symlinked base is accepted"
 mkdir -p "$RH/home/b2"; fake_script "$RH/home/b2/writer/.venv/bin/writer"
 printf '{"base_dir": "~/b2"}\n' > "$RH/config.json"
 sb HOME="$RH/home" STUDIO_BASE= STUDIO_HOME="$RH" "$PY" -m studio list 2>&1 | grep -q '^  write  *ready$'
@@ -319,12 +321,17 @@ tramp(){ fake_script "$W" "$(printf '#!/bin/sh\n%sexec%s %s "$0" "$@"\n%s' "'''"
 tramp "$SB/gone/python"; [ "$(st)" = "broken venv: interpreter $SB/gone/python missing, rebuild the venv" ]
 chk 0 $? "unquoted pip trampoline to a missing python is 'broken venv'"
 tramp "\"$SB/$(printf 'd%.0s' $(seq 260))/python\""; [ "$(st)" = ready ]
-chk 0 $? "a trampoline path cut off by the 256-byte read is not called broken"
+chk 0 $? "a quoted trampoline path cut off by the 256-byte read is not called broken"
+tramp "$SB/$(printf 'd%.0s' $(seq 260))/python"; [ "$(st)" = ready ]
+chk 0 $? "an unquoted trampoline path cut off by the 256-byte read is not called broken"
+tramp "\"$SB/a b/$(printf 'd%.0s' $(seq 260))/python\""; [ "$(st)" = ready ]
+chk 0 $? "a quoted trampoline path with a space, cut off by the read, is not called broken"
 fake_script "$W" '#!'; [ "$(st)" = "empty shebang in $W" ]; chk 0 $? "an empty shebang is not ready"
 fake_script "$W" '#!/usr/bin/env FOO=1 no-such-interp'
 [ "$(st)" = "broken venv: interpreter no-such-interp (via /usr/bin/env) missing, rebuild the venv" ]
 chk 0 $? "env shebang skips NAME=VALUE before the program"
 fake_script "$W" '#!/usr/bin/env -u FOO python3'; [ "$(st)" = ready ]; chk 0 $? "env shebang skips the argument of -u"
+fake_script "$W" '#!/usr/bin/env -C /tmp python3';  [ "$(st)" = ready ]; chk 0 $? "env shebang skips the argument of -C"
 B2="$SB/rvswe"; mkdir -p "$B2/SWE/binary/driver" "$B2/SWE/.venv/bin"; : > "$B2/SWE/binary/driver/orchestrator_driver.py"
 ln -s "$SB/gone/python3.12" "$B2/SWE/.venv/bin/python3"; ln -s python3 "$B2/SWE/.venv/bin/python"
 sb STUDIO_BASE="$B2" "$PY" -m studio list 2>&1 | grep -q "^  swe  *broken venv: interpreter $SB/gone/python3.12 missing"
@@ -332,6 +339,7 @@ chk 0 $? "a dangling venv python chain names the final missing target"
 
 # launch errors other than 'not found', and content with no python3
 fake_script "$W"; chmod -x "$W"
+[ "$(st)" = "not executable: $W" ]; chk 0 $? "a non-executable venv script is not ready"
 err="$(sb STUDIO_BASE="$B" "$PY" -m studio write 2>&1 >/dev/null)"; rc=$?
 [ "$rc" -eq 1 ] && printf '%s' "$err" | grep -q '^cannot launch write: .*Permission denied' && ! printf '%s' "$err" | grep -q Traceback
 chk 0 $? "a non-executable script: one 'cannot launch' line (any OSError), exit 1"

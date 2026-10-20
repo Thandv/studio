@@ -123,7 +123,7 @@ class Capability:
         if path.is_absolute():
             return path
         joined = Path(os.path.normpath(root / path))
-        if not Path(os.path.realpath(joined)).is_relative_to(os.path.realpath(root)):
+        if not joined.is_relative_to(os.path.normpath(root)):
             raise ConfigError(f"repos.{self.name} '{override}' escapes the base {root}")
         return joined
 
@@ -153,7 +153,8 @@ class Capability:
 
     def status(self) -> str:
         """The single readiness verdict: 'ready', 'repo not found: <path>',
-        'broken venv: ...', 'not installed', or 'bad config: <why>'."""
+        'broken venv: ...', 'not executable: <path>', 'empty shebang in <path>',
+        'cannot read <path>: <why>', 'not installed', or 'bad config: <why>'."""
         try:
             repo = self.repo_path()
         except ConfigError as e:
@@ -167,6 +168,8 @@ class Capability:
         if command is None:
             return "not installed"
         if self.kind == "passthrough":
+            if not os.access(command[0], os.X_OK):
+                return f"not executable: {command[0]}"
             return script_problem(Path(command[0])) or READY
         return READY
 

@@ -111,7 +111,8 @@ code. `swe` needs its own `SWE/.venv/bin/python` (no fallback to system
   path), else the directory that contains this studio checkout (`~` is expanded).
   To point one capability elsewhere, set `"repos": {"write": "/path/to/writer"}`
   in the config (absolute, or relative to the base; a relative path may not
-  leave the base, symlinks included).
+  leave the base; the check is on the path as written, so a
+  symlink inside the base may point anywhere).
   `studio list` shows each capability's status and repo path; `studio config`
   also prints the resolved base.
 - **Stdlib only.** The launcher has zero dependencies.
